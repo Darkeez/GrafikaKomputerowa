@@ -1,2 +1,2 @@
-# GrafikaKomputerowa
-# GrafikaKomputerowa
+Grafika komputerowa.
+Marek Pisarek
