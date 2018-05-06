@@ -1,2 +1,1 @@
-Grafika komputerowa.
-Marek Pisarek
+Grafika komputerowa, informatyka sem. 4
