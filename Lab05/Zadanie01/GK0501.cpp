@@ -1,155 +1,169 @@
-#include "stdafx.h"
+#pragma warning(push)
+#pragma warning(disable: 4244)
+#pragma warning(disable: 4305) 
+#pragma warning(disable: 4838) 
+#pragma warning(disable: 4996)
+
 #include <GL/glut.h>
-#include <GL/glext.h>
+#include "glext.h"
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
+#include "colors.h"
+#define _USE_MATH_DEFINES
 #include <math.h>
 #include "materials.h"
+#include "Vectors.h"
+// sta³e do menu podrêcznego
 
-// wskaŸnik dostêpnoœci rozszerzenia EXT_rescale_normal
-bool rescale_normal = false;
-
-// sta³e do obs³ugi menu podrêcznego
 enum
 {
-	BRASS,                // mosi¹dz
-	BRONZE,               // br¹z
-	POLISHED_BRONZE,      // polerowany br¹z
-	CHROME,               // chrom
-	COPPER,               // miedŸ
-	POLISHED_COPPER,      // polerowana miedŸ
-	GOLD,                 // z³oto
-	POLISHED_GOLD,        // polerowane z³oto
-	PEWTER,               // grafit (cyna z o³owiem)
-	SILVER,               // srebro
-	POLISHED_SILVER,      // polerowane srebro
-	EMERALD,              // szmaragd
-	JADE,                 // jadeit
-	OBSIDIAN,             // obsydian
-	PEARL,                // per³a
-	RUBY,                 // rubin
-	TURQUOISE,            // turkus
-	BLACK_PLASTIC,        // czarny plastik
-	BLACK_RUBBER,         // czarna guma
+	FULL_WINDOW,    // aspekt obrazu - ca³e okno
+	ASPECT_1_1,     // aspekt obrazu 1:1
+	EXIT,        // wyjœcie
+
+	AMBIENT_LIGHT,
+	DIRECT_LIGHT,
+	NORMAL_VECTORS,
+
 	NORMALS_SMOOTH,       // jeden wektor normalny na wierzcho³ek
 	NORMALS_FLAT,         // jeden wektor normalny na œcianê
-	FULL_WINDOW,          // aspekt obrazu - ca³e okno
-	ASPECT_1_1,           // aspekt obrazu 1:1
-	EXIT                  // wyjœcie
 };
+
+bool rescale_normal = false;
+
 
 // aspekt obrazu
 int aspect = FULL_WINDOW;
 
-// usuniêcie definicji makr near i far
-#ifdef near
-#undef near
-#endif
-#ifdef far
-#undef far
-#endif
+int currentLigth = AMBIENT_LIGHT;
+int normals = NORMALS_FLAT;
 
 // rozmiary bry³y obcinania
-const GLdouble left = -1.0;
-const GLdouble right = 1.0;
-const GLdouble bottom = -1.0;
-const GLdouble top = 1.0;
-const GLdouble near = 3.0;
-const GLdouble far = 7.0;
+
+const GLdouble left = -2.0;
+const GLdouble right = 2.0;
+const GLdouble bottom = -2.0;
+const GLdouble top = 2.0;
+const GLdouble near_ = 3.0;
+const GLdouble far_ = 7.0;
 
 // k¹ty obrotu
+
 GLfloat rotatex = 0.0;
 GLfloat rotatey = 0.0;
+GLfloat scale = 1.0;
+// wska?nik naciœniêcia lewego przycisku myszki
 
-// wskaŸnik naciœniêcia lewego przycisku myszki
 int button_state = GLUT_UP;
 
 // po³o?enie kursora myszki
+
 int button_x, button_y;
 
-// wspó³czynnik skalowania
-GLfloat scale = 1.0;
+// sk³adowe globalnego œwiat³a otaczaj¹cego
 
-// w³aœciwoœci materia³u - domyœlnie mosi¹dz
-const GLfloat *ambient = BrassAmbient;
-const GLfloat *diffuse = BrassDiffuse;
-const GLfloat *specular = BrassSpecular;
-GLfloat shininess = BrassShininess;
+// wartosc pocz¹tkowa odpowiada wartoœci domyœlnej
 
-// wektory normalne
-int normals = NORMALS_FLAT;
 
-// wspó³rzêdne wierzcho³ków dwudziestoœcianu
-GLfloat vertex[17 * 3] =
+// sk³adowych tego œwiat³a
+
+GLfloat ambient_light[4] =
 {
-	0.000,  0.667,  0.500,   // v0+
-	0.000,  0.667, -0.500,   // v1+
-	0.000, -0.667, -0.500,   // v2
-	0.000, -0.667,  0.500,   // v3
-	0.667,  0.500,  0.000,   // v4+
-	0.667, -0.500,  0.000,   // v5
-	-0.667, -0.500,  0.000,  // v6
-	-0.667,  0.500,  0.000,  // v7+
-	0.500,  0.000,  0.667,   // v8
-	-0.500,  0.000,  0.667,  // v9
-	-0.500,  0.000, -0.667,  // v10+
-	0.500,  0.000, -0.667 ,   // v11+
+	0.396, 0.329, 0.101,0.0
+	//0.0,0.0,1.0,0.0
 };
 
-// opis œcian dwudziestoœcianu
+const GLfloat *ambient = PolishedGoldAmbient;
+const GLfloat *diffuse = PolishedGoldDiffuse;
+const GLfloat *specular = PolishedGoldSpecular;
+GLfloat shininess = PolishedGoldShininess;
 
-int triangles[20*3] =
+// kierunek Ÿród³a œwiat³a
+GLfloat light_position[4] =
 {
-//	1, 10,  7,
-	1,  4, 11,
-	1,  0,  7,
-	//0,  4,  1,
-
-
-
+	0.0,0.0,2.0,0.0
 };
 
-// obliczanie wektora normalnego dla wybranej œciany
+// k¹ty obrotu kierunku Ÿród³a œwiat³a
+GLfloat light_rotatex = 0.0;
+GLfloat light_rotatey = 0.0;
 
-void Normal(GLfloat *n, int i)
+// funkcja rysuj¹ca napis w wybranym miejscu
+
+
+
+void DrawString(GLfloat x, GLfloat y, char *string)
 {
-	GLfloat v1[3], v2[3];
+	// po³o?enie napisu
+	glRasterPos2f(x, y);
 
-	// obliczenie wektorów na podstawie wspó³rzêdnych wierzcho³ków trójk¹tów
-	v1[0] = vertex[3 * triangles[3 * i + 1] + 0] - vertex[3 * triangles[3 * i + 0] + 0];
-	v1[1] = vertex[3 * triangles[3 * i + 1] + 1] - vertex[3 * triangles[3 * i + 0] + 1];
-	v1[2] = vertex[3 * triangles[3 * i + 1] + 2] - vertex[3 * triangles[3 * i + 0] + 2];
-	v2[0] = vertex[3 * triangles[3 * i + 2] + 0] - vertex[3 * triangles[3 * i + 1] + 0];
-	v2[1] = vertex[3 * triangles[3 * i + 2] + 1] - vertex[3 * triangles[3 * i + 1] + 1];
-	v2[2] = vertex[3 * triangles[3 * i + 2] + 2] - vertex[3 * triangles[3 * i + 1] + 2];
-
-	// obliczenie waktora normalnego przy pomocy iloczynu wektorowego
-	n[0] = v1[1] * v2[2] - v1[2] * v2[1];
-	n[1] = v1[2] * v2[0] - v1[0] * v2[2];
-	n[2] = v1[0] * v2[1] - v1[1] * v2[0];
+	// wyœwietlenie napisu
+	int len = strlen(string);
+	for (int i = 0; i < len; i++)
+		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, string[i]);
 }
 
-// normalizacja wektora
 
-void Normalize(GLfloat *v)
-{
-	// obliczenie d³ugoœci wektora
-	GLfloat d = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+constexpr int verticesCount = 6;
+constexpr float piramidRadius = 1.0f;
+GLTVector3 vCorners[verticesCount];
 
-	// normalizacja wektora
-	if (d)
+void FillCorners() {
+	GLdouble degree = 2 * M_PI / verticesCount;
+
+	for (int i = 0; i < verticesCount; i++)
 	{
-		v[0] /= d;
-		v[1] /= d;
-		v[2] /= d;
+		vCorners[i][0] = piramidRadius*cos(i*degree);
+		vCorners[i][1] = 0;
+		vCorners[i][2] = piramidRadius*sin(i*degree);
 	}
 }
 
-// funkcja generuj¹ca scenê 3D
+void CreatePiramidPart(float y) {
+	for (int i = 0; i < verticesCount; i++)
+	{
+		int j = i + 1;
+		if (i == verticesCount - 1)
+			j = 0;
+		GLTVector3 vNormal;
+		//glColor3f((double)i / verticesCount, 0, 1);
+		GLTVector3 vertex = { 0,y,0 };
+		gltGetNormalVector(vertex, vCorners[j], vCorners[i], vNormal);
+		glNormal3fv(vNormal);
 
+		glColor3fv(White);
+		glTexCoord2f(0.0f, 0.0f);
+		glVertex3fv(vertex);
+
+		glTexCoord2f(1.0f, 1.0f);
+		glVertex3fv(vCorners[i]);
+
+		glTexCoord2f(0.0f, 1.0f);
+		glVertex3fv(vCorners[j]);
+	}
+}
+
+void RenderPiramid() {
+
+	glPushMatrix();
+
+	glScalef(scale, scale, scale);
+	glRotatef(rotatex, 1.0f, 0.0f, 0.0f);
+	glRotatef(rotatey, 0.0f, 1.0f, 0.0f);
+	//glScalef(scale, scale, scale);
+	glBegin(GL_TRIANGLES);
+
+	CreatePiramidPart(0.0f);
+	CreatePiramidPart(1.0f);
+
+	glEnd();
+
+	glPopMatrix();
+}
 void Display()
 {
-	// kolor t³a - zawartoœæ bufora koloru
+	// kolor t³a - zawartoœ? bufora koloru
 	glClearColor(1.0, 1.0, 1.0, 1.0);
 
 	// czyszczenie bufora koloru i bufora g³êbokoœci
@@ -161,139 +175,149 @@ void Display()
 	// macierz modelowania = macierz jednostkowa
 	glLoadIdentity();
 
-	// przesuniêcie uk³adu wspó³rzêdnych obiektu do œrodka bry³y odcinania
-	glTranslatef(0, 0, -(near + far) / 2);
+	// przesuniêcie uk³adu wspó³rzêdnych szeœcianu do œrodka bry³y odcinania
+	glTranslatef(0, 0, -(near_ + far_) / 2);
 
-	// obroty obiektu
+	// obroty szeœcianu
 	glRotatef(rotatex, 1.0, 0, 0);
 	glRotatef(rotatey, 0, 1.0, 0);
 
-	// skalowanie obiektu - klawisze "+" i "-"
-	glScalef(scale, scale, scale);
-
-	// w³¹czenie testu bufora g³êbokoœci
-	glEnable(GL_DEPTH_TEST);
+	// niewielkie powiêkszenie szeœcianu
+	glScalef(1.15, 1.15, 1.15);
 
 	// w³¹czenie oœwietlenia
 	glEnable(GL_LIGHTING);
 
-	// w³¹czenie œwiat³a GL_LIGHT0 z parametrami domyœlnymi
-	glEnable(GL_LIGHT0);
+	if (currentLigth == AMBIENT_LIGHT)
+	{
+		glutSetWindowTitle("AMBIENT LIGHT");
 
-	// w³aœciwoœci materia³u
-	glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
-	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
-	glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
-	glMaterialf(GL_FRONT, GL_SHININESS, shininess);
+		// parametry globalnego œwiat³a otaczaj¹cego
+		glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light);
 
-	// w³¹czenie automatycznej normalizacji wektorów normalnych
-	// lub automatycznego skalowania jednostkowych wektorów normalnych
-	if (rescale_normal == true)
-		glEnable(GL_RESCALE_NORMAL);
-	else
+		// w³¹czenie obs³ugi w³aœciwoœci materia³ów
+		glEnable(GL_COLOR_MATERIAL);
+
+		// w³aœciwoœci materia³u okreœlone przez kolor wierzcho³ków
+		glColorMaterial(GL_FRONT, GL_AMBIENT);
+
+		glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+		glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
+		glMaterialf(GL_FRONT, GL_SHININESS, shininess);
+
+		// w³¹czenie testu bufora g³êbokoœci
+		glEnable(GL_DEPTH_TEST);
+
+		RenderPiramid();
+
+		// wy³¹czenie oœwietlenia
+		glDisable(GL_LIGHTING);
+
+		// wy³¹czenie obs³ugi w³aœciwoœci materia³ów
+		glDisable(GL_COLOR_MATERIAL);
+
+		// wyœwietlenie sk³adowych globalnego œwiat³a otaczaj¹cego
+		char string[100];
+		GLfloat rgba[4];
+		glColor3fv(Black);
+
+		// pobranie wartoœci sk³adowych œwiat³a otaczaj¹cego
+		// (oczywiœcie wartoœci te odpowiadaj¹ tablicy ambient_light)
+		glGetFloatv(GL_LIGHT_MODEL_AMBIENT, rgba);
+		sprintf(string, "AMBIENT: R=%f G=%f B=%f A=%f", rgba[0], rgba[1], rgba[2], rgba[3]);
+
+		// trzeba odpowiednio przekszta³ci? uk³ad wspó³rzêdnych
+		// aby napis znajdowa³ siê na samej "górze" bry³y obcinania
+		glLoadIdentity();
+		glTranslatef(0, 0, -near_);
+
+		// narysowanie napisu
+		DrawString(left, bottom, string);
+	}
+
+	else if (currentLigth == DIRECT_LIGHT)
+	{
+		glutSetWindowTitle("DIRECT LIGHT");
+
+		// w³¹czenie œwiat³a GL_LIGHT0
+		glEnable(GL_LIGHT0);
+
+		// w³¹czenie automatycznej normalizacji wektorów normalnych
 		glEnable(GL_NORMALIZE);
 
-	// pocz¹tek definicji obiektu
-	glBegin(GL_TRIANGLES);
+		// w³aœciwoœci materia³u
+		glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+		glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
+		glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 
-	// generowanie obiektu g³adkiego - jeden uœredniony
-	// wektor normalny na wierzcho³ek
-	if (normals == NORMALS_SMOOTH)
-		for (int i = 0; i < 20; i++)
-		{
-			// obliczanie wektora normalnego dla pierwszego wierzcho³ka
-			GLfloat n[3];
-			n[0] = n[1] = n[2] = 0.0;
+		// zmiana kierunku Ÿród³a œwiat³a jest wykonywana niezale¿nie
+		// od obrotów obiektu, st¹d od³o¿enie na stos macierzy modelowania
+		glPushMatrix();
 
-			// wyszukanie wszystkich œcian posiadaj¹cych bie?¹cy wierzcho³ek
-			for (int j = 0; j < 20; j++)
-				if (3 * triangles[3 * i + 0] == 3 * triangles[3 * j + 0] ||
-					3 * triangles[3 * i + 0] == 3 * triangles[3 * j + 1] ||
-					3 * triangles[3 * i + 0] == 3 * triangles[3 * j + 2])
-				{
-					// dodawanie wektorów normalnych poszczególnych œcian
-					GLfloat nv[3];
-					Normal(nv, j);
-					n[0] += nv[0];
-					n[1] += nv[1];
-					n[2] += nv[2];
-				}
+		// macierz modelowania = macierz jednostkowa
+		glLoadIdentity();
 
-			// uœredniony wektor normalny jest normalizowany tylko, gdy biblioteka
-			// obs³uguje automatyczne skalowania jednostkowych wektorów normalnych
-			if (rescale_normal == true)
-				Normalize(n);
-			glNormal3fv(n);
-			glVertex3fv(&vertex[3 * triangles[3 * i + 0]]);
+		// obroty kierunku Ÿród³a œwiat³a - klawisze kursora
+		glRotatef(light_rotatex, 1.0, 0, 0);
+		glRotatef(light_rotatey, 0, 1.0, 0);
 
-			// obliczanie wektora normalnego dla drugiego wierzcho³ka
-			n[0] = n[1] = n[2] = 0.0;
+		// ustalenie kierunku Ÿród³a œwiat³a
+		glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
-			// wyszukanie wszystkich œcian posiadaj¹cych bie?¹cy wierzcho³ek
-			for (int j = 0; j < 20; j++)
-				if (3 * triangles[3 * i + 1] == 3 * triangles[3 * j + 0] ||
-					3 * triangles[3 * i + 1] == 3 * triangles[3 * j + 1] ||
-					3 * triangles[3 * i + 1] == 3 * triangles[3 * j + 2])
-				{
-					// dodawanie wektorów normalnych poszczególnych œcian
-					GLfloat nv[3];
-					Normal(nv, j);
-					n[0] += nv[0];
-					n[1] += nv[1];
-					n[2] += nv[2];
-				}
+		// przywrócenie pierwotnej macierzy modelowania
+		glPopMatrix();
 
-			// uœredniony wektor normalny jest normalizowany tylko, gdy biblioteka
-			// obs³uguje automatyczne skalowania jednostkowych wektorów normalnych
-			if (rescale_normal == true)
-				Normalize(n);
-			glNormal3fv(n);
-			glVertex3fv(&vertex[3 * triangles[3 * i + 1]]);
+		RenderPiramid();
 
-			// obliczanie wektora normalnego dla trzeciego wierzcho³ka
-			n[0] = n[1] = n[2] = 0.0;
+		glDisable(GL_LIGHT0);
+		glDisable(GL_NORMALIZE);
 
-			// wyszukanie wszystkich œcian posiadaj¹cych bie?¹cy wierzcho³ek
-			for (int j = 0; j < 20; j++)
-				if (3 * triangles[3 * i + 2] == 3 * triangles[3 * j + 0] ||
-					3 * triangles[3 * i + 2] == 3 * triangles[3 * j + 1] ||
-					3 * triangles[3 * i + 2] == 3 * triangles[3 * j + 2])
-				{
-					// dodawanie wektorów normalnych poszczególnych œcian
-					GLfloat nv[3];
-					Normal(nv, j);
-					n[0] += nv[0];
-					n[1] += nv[1];
-					n[2] += nv[2];
-				}
+		// informacje o modyfikowanych wartoœciach
+		// parametrów Ÿród³a œwiata³a GL_LIGHT0
+		char string[200];
+		GLfloat vec[4];
+		glColor3fv(Black);
 
-			// uœredniony wektor normalny jest normalizowany tylko, gdy biblioteka
-			// obs³uguje automatyczne skalowania jednostkowych wektorów normalnych
-			if (rescale_normal == true)
-				Normalize(n);
-			glNormal3fv(n);
-			glVertex3fv(&vertex[3 * triangles[3 * i + 2]]);
-		}
-	else
 
-		// generowanie obiektu "p³askiego" - jeden wektor normalny na œcianê
-		for (int i = 0; i < 20; i++)
-		{
-			GLfloat n[3];
-			Normal(n, i);
+		// kierunek Ÿród³a œwiat³a
+		glGetLightfv(GL_LIGHT0, GL_POSITION, vec);
+		sprintf(string, "GL_POSITION = (%f,%f,%f,%f)", vec[0], vec[1], vec[2], vec[3]);
+		DrawString(2, 2, string);
 
-			// uœredniony wektor normalny jest normalizowany tylko, gdy biblioteka
-			// obs³uguje automatyczne skalowania jednostkowych wektorów normalnych
-			if (rescale_normal == true)
-				Normalize(n);
-			glNormal3fv(n);
-			glVertex3fv(&vertex[3 * triangles[3 * i + 0]]);
-			glVertex3fv(&vertex[3 * triangles[3 * i + 1]]);
-			glVertex3fv(&vertex[3 * triangles[3 * i + 2]]);
-		}
+		// k¹ty obrotu kierunku Ÿród³a œwiat³a
+		sprintf(string, "light_rotatex = %f", light_rotatex);
+		DrawString(2, 16, string);
+		sprintf(string, "light_rotatey = %f", light_rotatey);
+		DrawString(2, 30, string);
 
-	// koniec definicji obiektu
-	glEnd();
+	}
+
+	else if (currentLigth == NORMAL_VECTORS) {
+		glutSetWindowTitle("NORMAL VECTORS");
+
+		// w³¹czenie œwiat³a GL_LIGHT0 z parametrami domyœlnymi
+		glEnable(GL_LIGHT0);
+
+		// w³aœciwoœci materia³u
+		glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+		glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
+		glMaterialf(GL_FRONT, GL_SHININESS, shininess);
+
+		// w³¹czenie automatycznej normalizacji wektorów normalnych
+		// lub automatycznego skalowania jednostkowych wektorów normalnych
+		if (rescale_normal == true)
+			glEnable(GL_RESCALE_NORMAL);
+		else
+			glEnable(GL_NORMALIZE);
+
+		RenderPiramid();
+
+		// koniec definicji obiektu
+		glEnd();
+	}
 
 	// skierowanie polece? do wykonania
 	glFlush();
@@ -318,17 +342,17 @@ void Reshape(int width, int height)
 	// parametry bry³y obcinania
 	if (aspect == ASPECT_1_1)
 	{
-		// wysokoœæ okna wiêksza od wysokoœci okna
+		// wysokoœ? okna wiêksza od wysokoœci okna
 		if (width < height && width > 0)
-			glFrustum(left, right, bottom*height / width, top*height / width, near, far);
+			glFrustum(left, right, bottom*height / width, top*height / width, near_, far_);
 		else
 
-			// szerokoœæ okna wiêksza lub równa wysokoœci okna
+			// szerokoœ? okna wiêksza lub równa wysokoœci okna
 			if (width >= height && height > 0)
-				glFrustum(left*width / height, right*width / height, bottom, top, near, far);
+				glFrustum(left*width / height, right*width / height, bottom, top, near_, far_);
 	}
 	else
-		glFrustum(left, right, bottom, top, near, far);
+		glFrustum(left, right, bottom, top, near_, far_);
 
 	// generowanie sceny 3D
 	Display();
@@ -338,7 +362,27 @@ void Reshape(int width, int height)
 
 void Keyboard(unsigned char key, int x, int y)
 {
-	// klawisz +
+	// zmiana wartoœci sk³adowej R
+	if (key == 'R' && ambient_light[0] < 1.0)
+		ambient_light[0] += 0.05;
+	else
+		if (key == 'r' && ambient_light[0] > -1.0)
+			ambient_light[0] -= 0.05;
+
+	// zmiana wartoœci sk³adowej G
+	if (key == 'G' && ambient_light[1] < 1.0)
+		ambient_light[1] += 0.05;
+	else
+		if (key == 'g' && ambient_light[1] > -1.0)
+			ambient_light[1] -= 0.05;
+
+	// zmiana wartoœci sk³adowej B
+	if (key == 'B' && ambient_light[2] < 1.0)
+		ambient_light[2] += 0.05;
+	else
+		if (key == 'b' && ambient_light[2] > -1.0)
+			ambient_light[2] -= 0.05;
+
 	if (key == '+')
 		scale += 0.05;
 	else
@@ -355,31 +399,64 @@ void Keyboard(unsigned char key, int x, int y)
 
 void SpecialKeys(int key, int x, int y)
 {
-	switch (key)
+
+	if (currentLigth == AMBIENT_LIGHT || currentLigth == NORMAL_VECTORS)
 	{
-		// kursor w lewo
-	case GLUT_KEY_LEFT:
-		rotatey -= 1;
-		break;
+		switch (key)
+		{
+			// kursor w lewo
+		case GLUT_KEY_LEFT:
+			rotatey -= 1;
+			break;
 
-		// kursor w górê
-	case GLUT_KEY_UP:
-		rotatex -= 1;
-		break;
+			// kursor w górê
+		case GLUT_KEY_UP:
+			rotatex -= 1;
+			break;
 
-		// kursor w prawo
-	case GLUT_KEY_RIGHT:
-		rotatey += 1;
-		break;
+			// kursor w prawo
+		case GLUT_KEY_RIGHT:
+			rotatey += 1;
+			break;
 
-		// kursor w dó³
-	case GLUT_KEY_DOWN:
-		rotatex += 1;
-		break;
+			// kursor w dó³
+		case GLUT_KEY_DOWN:
+			rotatex += 1;
+			break;
+		}
+		// odrysowanie okna
+		Reshape(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
 	}
 
-	// odrysowanie okna
-	Reshape(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
+	else if (currentLigth == DIRECT_LIGHT)
+	{
+		switch (key)
+		{
+			// kursor w lewo
+		case GLUT_KEY_LEFT:
+			light_rotatey -= 5;
+			break;
+
+			// kursor w prawo
+		case GLUT_KEY_RIGHT:
+			light_rotatey += 5;
+			break;
+
+			// kursor w dó³
+		case GLUT_KEY_DOWN:
+			light_rotatex += 5;
+			break;
+
+			// kursor w górê
+		case GLUT_KEY_UP:
+			light_rotatex -= 5;
+			break;
+		}
+		//odrysowanie okna
+		Display();
+	}
+
+
 }
 
 // obs³uga przycisków myszki
@@ -420,189 +497,6 @@ void Menu(int value)
 {
 	switch (value)
 	{
-		// materia³ - mosi¹dz
-	case BRASS:
-		ambient = BrassAmbient;
-		diffuse = BrassDiffuse;
-		specular = BrassSpecular;
-		shininess = BrassShininess;
-		Display();
-		break;
-
-		// materia³ - br¹z
-	case BRONZE:
-		ambient = BronzeAmbient;
-		diffuse = BronzeDiffuse;
-		specular = BronzeSpecular;
-		shininess = BronzeShininess;
-		Display();
-		break;
-
-		// materia³ - polerowany br¹z
-	case POLISHED_BRONZE:
-		ambient = PolishedBronzeAmbient;
-		diffuse = PolishedBronzeDiffuse;
-		specular = PolishedBronzeSpecular;
-		shininess = PolishedBronzeShininess;
-		Display();
-		break;
-
-		// materia³ - chrom
-	case CHROME:
-		ambient = ChromeAmbient;
-		diffuse = ChromeDiffuse;
-		specular = ChromeSpecular;
-		shininess = ChromeShininess;
-		Display();
-		break;
-
-		// materia³ - miedŸ
-	case COPPER:
-		ambient = CopperAmbient;
-		diffuse = CopperDiffuse;
-		specular = CopperSpecular;
-		shininess = CopperShininess;
-		Display();
-		break;
-
-		// materia³ - polerowana miedŸ
-	case POLISHED_COPPER:
-		ambient = PolishedCopperAmbient;
-		diffuse = PolishedCopperDiffuse;
-		specular = PolishedCopperSpecular;
-		shininess = PolishedCopperShininess;
-		Display();
-		break;
-
-		// materia³ - z³oto
-	case GOLD:
-		ambient = GoldAmbient;
-		diffuse = GoldDiffuse;
-		specular = GoldSpecular;
-		shininess = GoldShininess;
-		Display();
-		break;
-
-		// materia³ - polerowane z³oto
-	case POLISHED_GOLD:
-		ambient = PolishedGoldAmbient;
-		diffuse = PolishedGoldDiffuse;
-		specular = PolishedGoldSpecular;
-		shininess = PolishedGoldShininess;
-		Display();
-		break;
-
-		// materia³ - grafit (cyna z o³owiem)
-	case PEWTER:
-		ambient = PewterAmbient;
-		diffuse = PewterDiffuse;
-		specular = PewterSpecular;
-		shininess = PewterShininess;
-		Display();
-		break;
-
-		// materia³ - srebro
-	case SILVER:
-		ambient = SilverAmbient;
-		diffuse = SilverDiffuse;
-		specular = SilverSpecular;
-		shininess = SilverShininess;
-		Display();
-		break;
-
-		// materia³ - polerowane srebro
-	case POLISHED_SILVER:
-		ambient = PolishedSilverAmbient;
-		diffuse = PolishedSilverDiffuse;
-		specular = PolishedSilverSpecular;
-		shininess = PolishedSilverShininess;
-		Display();
-		break;
-
-		// materia³ - szmaragd
-	case EMERALD:
-		ambient = EmeraldAmbient;
-		diffuse = EmeraldDiffuse;
-		specular = EmeraldSpecular;
-		shininess = EmeraldShininess;
-		Display();
-		break;
-
-		// materia³ - jadeit
-	case JADE:
-		ambient = JadeAmbient;
-		diffuse = JadeDiffuse;
-		specular = JadeSpecular;
-		shininess = JadeShininess;
-		Display();
-		break;
-
-		// materia³ - obsydian
-	case OBSIDIAN:
-		ambient = ObsidianAmbient;
-		diffuse = ObsidianDiffuse;
-		specular = ObsidianSpecular;
-		shininess = ObsidianShininess;
-		Display();
-		break;
-
-		// materia³ - per³a
-	case PEARL:
-		ambient = PearlAmbient;
-		diffuse = PearlDiffuse;
-		specular = PearlSpecular;
-		shininess = PearlShininess;
-		Display();
-		break;
-
-		// metaria³ - rubin
-	case RUBY:
-		ambient = RubyAmbient;
-		diffuse = RubyDiffuse;
-		specular = RubySpecular;
-		shininess = RubyShininess;
-		Display();
-		break;
-
-		// materia³ - turkus
-	case TURQUOISE:
-		ambient = TurquoiseAmbient;
-		diffuse = TurquoiseDiffuse;
-		specular = TurquoiseSpecular;
-		shininess = TurquoiseShininess;
-		Display();
-		break;
-
-		// materia³ - czarny plastik
-	case BLACK_PLASTIC:
-		ambient = BlackPlasticAmbient;
-		diffuse = BlackPlasticDiffuse;
-		specular = BlackPlasticSpecular;
-		shininess = BlackPlasticShininess;
-		Display();
-		break;
-
-		// materia³ - czarna guma
-	case BLACK_RUBBER:
-		ambient = BlackRubberAmbient;
-		diffuse = BlackRubberDiffuse;
-		specular = BlackRubberSpecular;
-		shininess = BlackRubberShininess;
-		Display();
-		break;
-
-		// wektory normalne - GLU_SMOOTH
-	case NORMALS_SMOOTH:
-		normals = NORMALS_SMOOTH;
-		Display();
-		break;
-
-		// wektory normalne - GLU_FLAT
-	case NORMALS_FLAT:
-		normals = NORMALS_FLAT;
-		Display();
-		break;
-
 		// obszar renderingu - ca³e okno
 	case FULL_WINDOW:
 		aspect = FULL_WINDOW;
@@ -621,34 +515,19 @@ void Menu(int value)
 	}
 }
 
-// sprawdzenie i przygotowanie obs³ugi wybranych rozszerze?
-
-void ExtensionSetup()
-{
-	// pobranie numeru wersji biblioteki OpenGL
-	const char *version = (char*)glGetString(GL_VERSION);
-
-	// odczyt wersji OpenGL
-	int major = 0, minor = 0;
-	if (sscanf_s(version, "%d.%d", &major, &minor) != 2)
+void MenuLigth(int value) {
+	switch (value)
 	{
-#ifndef WIN32
-		printf("B³êdny format wersji OpenGL\n");
-#else
-
-		printf("Bledny format wersji OpenGL\n");
-#endif
-
-		exit(0);
+	case AMBIENT_LIGHT:
+		currentLigth = AMBIENT_LIGHT;
+		break;
+	case DIRECT_LIGHT:
+		currentLigth = DIRECT_LIGHT;
+		break;
+	case NORMAL_VECTORS:
+		currentLigth = NORMAL_VECTORS;
+		break;
 	}
-
-	// sprawdzenie czy jest co najmniej wersja 1.2
-	if (major > 1 || minor >= 2)
-		rescale_normal = true;
-	else
-		// sprawdzenie czy jest obs³ugiwane rozszerzenie EXT_rescale_normal
-		if (glutExtensionSupported("GL_EXT_rescale_normal"))
-			rescale_normal = true;
 }
 
 int main(int argc, char *argv[])
@@ -663,7 +542,13 @@ int main(int argc, char *argv[])
 	glutInitWindowSize(500, 500);
 
 	// utworzenie g³ównego okna programu
-	glutCreateWindow("Wektory normalne");
+#ifdef WIN32
+
+	glutCreateWindow("Globalne œwiat³o otaczaj¹ce");
+#else
+
+	glutCreateWindow("Globalne swiatlo otaczajace");
+#endif
 
 	// do³¹czenie funkcji generuj¹cej scenê 3D
 	glutDisplayFunc(Display);
@@ -686,67 +571,15 @@ int main(int argc, char *argv[])
 	// utworzenie menu podrêcznego
 	glutCreateMenu(Menu);
 
-	// utworzenie podmenu - Materia³
-	int MenuMaterial = glutCreateMenu(Menu);
-#ifdef WIN32
+	int ligthMode = glutCreateMenu(MenuLigth);
+	glutAddMenuEntry("AMBIENT LIGTH", AMBIENT_LIGHT);
+	glutAddMenuEntry("DIRECT LIGTH", DIRECT_LIGHT);
+	glutAddMenuEntry("NORMAL VECTORS", NORMAL_VECTORS);
 
-	glutAddMenuEntry("Mosi¹dz", BRASS);
-	glutAddMenuEntry("Br¹z", BRONZE);
-	glutAddMenuEntry("Polerowany br¹z", POLISHED_BRONZE);
-	glutAddMenuEntry("Chrom", CHROME);
-	glutAddMenuEntry("MiedŸ", COPPER);
-	glutAddMenuEntry("Polerowana miedŸ", POLISHED_COPPER);
-	glutAddMenuEntry("Z³oto", GOLD);
-	glutAddMenuEntry("Polerowane z³oto", POLISHED_GOLD);
-	glutAddMenuEntry("Grafit (cyna z o³owiem)", PEWTER);
-	glutAddMenuEntry("Srebro", SILVER);
-	glutAddMenuEntry("Polerowane srebro", POLISHED_SILVER);
-	glutAddMenuEntry("Szmaragd", EMERALD);
-	glutAddMenuEntry("Jadeit", JADE);
-	glutAddMenuEntry("Obsydian", OBSIDIAN);
-	glutAddMenuEntry("Per³a", PEARL);
-	glutAddMenuEntry("Rubin", RUBY);
-	glutAddMenuEntry("Turkus", TURQUOISE);
-	glutAddMenuEntry("Czarny plastik", BLACK_PLASTIC);
-	glutAddMenuEntry("Czarna guma", BLACK_RUBBER);
-#else
-
-	glutAddMenuEntry("Mosiadz", BRASS);
-	glutAddMenuEntry("Braz", BRONZE);
-	glutAddMenuEntry("Polerowany braz", POLISHED_BRONZE);
-	glutAddMenuEntry("Chrom", CHROME);
-	glutAddMenuEntry("Miedz", COPPER);
-	glutAddMenuEntry("Polerowana miedz", POLISHED_COPPER);
-	glutAddMenuEntry("Zloto", GOLD);
-	glutAddMenuEntry("Polerowane zloto", POLISHED_GOLD);
-	glutAddMenuEntry("Grafit (cyna z o³owiem)", PEWTER);
-	glutAddMenuEntry("Srebro", SILVER);
-	glutAddMenuEntry("Polerowane srebro", POLISHED_SILVER);
-	glutAddMenuEntry("Szmaragd", EMERALD);
-	glutAddMenuEntry("Jadeit", JADE);
-	glutAddMenuEntry("Obsydian", OBSIDIAN);
-	glutAddMenuEntry("Perla", PEARL);
-	glutAddMenuEntry("Rubin", RUBY);
-	glutAddMenuEntry("Turkus", TURQUOISE);
-	glutAddMenuEntry("Czarny plastik", BLACK_PLASTIC);
-	glutAddMenuEntry("Czarna guma", BLACK_RUBBER);
-#endif
-
-	// utworzenie podmenu - Wektory normalne
-	int MenuNormals = glutCreateMenu(Menu);
-#ifndef WIN32
-
-	glutAddMenuEntry("Jeden wektor normalny na wierzcholek", NORMALS_SMOOTH);
-	glutAddMenuEntry("Jeden wektor normalny na sciane", NORMALS_FLAT);
-#else
-
-	glutAddMenuEntry("Jeden wektor normalny na wierzcho³ek", NORMALS_SMOOTH);
-	glutAddMenuEntry("Jeden wektor normalny na œcianê", NORMALS_FLAT);
-#endif
 
 	// utworzenie podmenu - aspekt obrazu
 	int MenuAspect = glutCreateMenu(Menu);
-#ifndef WIN32
+#ifdef WIN32
 
 	glutAddMenuEntry("Aspekt obrazu - ca³e okno", FULL_WINDOW);
 #else
@@ -758,18 +591,10 @@ int main(int argc, char *argv[])
 
 	// menu g³ówne
 	glutCreateMenu(Menu);
+	glutAddSubMenu("Light Mode", ligthMode);
+	glutAddSubMenu("Aspekt obrazu", MenuAspect);
 
 #ifdef WIN32
-
-	glutAddSubMenu("Materia³", MenuMaterial);
-#else
-
-	glutAddSubMenu("Material", MenuMaterial);
-#endif
-
-	glutAddSubMenu("Wektory normalne", MenuNormals);
-	glutAddSubMenu("Aspekt obrazu", MenuAspect);
-#ifndef WIN32
 
 	glutAddMenuEntry("Wyjœcie", EXIT);
 #else
@@ -780,10 +605,11 @@ int main(int argc, char *argv[])
 	// okreœlenie przycisku myszki obs³uguj¹cej menu podrêczne
 	glutAttachMenu(GLUT_RIGHT_BUTTON);
 
-	// sprawdzenie i przygotowanie obs³ugi wybranych rozszerze?
-	ExtensionSetup();
+	FillCorners();
 
 	// wprowadzenie programu do obs³ugi pêtli komunikatów
 	glutMainLoop();
 	return 0;
 }
+
+#pragma warning(pop)

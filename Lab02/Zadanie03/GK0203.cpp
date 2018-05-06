@@ -1,253 +1,280 @@
 #include "stdafx.h"
-#include <GL\freeglut.h>
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
+#include <GL/glut.h>
+#endif
 
-/*
-Program 3. Narysowaæ piramidê zbudowan¹ z trójk¹tów z wielok¹tem jako podstawa. 
-Na ka¿dy z boków, jak równie¿ na podstawê, nak³adaæ teksturê z obrazem kamienia.
-Mo¿na obracaæ piramidê , naciskaj¹c klawisze ze strza³kami.
-*/
+#include "math.h"
 
-//Struktura wektoru scharakteryzowana przez wspolrzedne xyz
-struct CVector {
-	GLfloat x;
-	GLfloat y;
-	GLfloat z;
-};
-
-GLuint texture;
-
-void GetNormal(CVector V1, CVector V2, CVector V3, CVector &N);
-
-//Widocznosc funkcji rysujpiramide
-void RysujPiramide();
-
-//Ustalenie wielkosci obrotu
-float rotX = 0.0f, rotY = 0.0f;
-float color[3] = { 1.0f, 1.0f, 1.0f };
-
-// Wartoœci i wspó³rzêdne œwiat³a
-GLfloat whiteLight[4] = { 0.05f, 0.05f, 0.05f, 1.0f };
-GLfloat sourceLight[4] = { 0.25f, 0.25f, 0.25f, 1.0f };
-GLfloat lightPos[4] = { -10.f, 5.0f, 5.0f, 1.0f };
+#include "gltools_extracted.h"
 
 
-void Display()
-{
-	// Wyczyszczenie okna aktualnym kolorem czyszcz¹cym i bufora g³êbi
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	// Ponowne ustawienie stosu macierzy rzutowania
-	//Wszystkie przysz³e przekszta³cenia bêd¹ dotyczy³y naszych modeli, czyli tego, co narysujemy
-	glMatrixMode(GL_MODELVIEW);
-	//s³u¿y do ponownego ustawienia (resetu) uk³adu wspó³rzêdnych, zanim wykonane zostan¹ jakiekolwiek manipulacje na macierzach.
-	glLoadIdentity();
-	//Obrót realizowany jest w kierunku przeciwnym do ruchu wskazówek zegara w kierunku prostej wyznaczonej przez wektor [x, y, z] zaczepionym w pocz¹tku uk³adu wspó³rzêdnych.
-	glRotatef(rotX, 1.0f, 0.0f, 0.0f);
-	//Obrót realizowany jest w kierunku przeciwnym do ruchu wskazówek zegara w kierunku prostej wyznaczonej przez wektor [x, y, z] zaczepionym w pocz¹tku uk³adu wspó³rzêdnych.
-	glRotatef(rotY, 0.0f, 1.0f, 0.0f);
-	//Sposób rysowania obiektów ustala siê za pomoc¹ funkcji glPolygonMode 
-	//Pierwszy parametr ustala która czêœæ obiektu ma byæ rysowana w sposób okreœlony za pomoc¹ drugiego parametru
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	//Aktualny kolor rysuj¹cy
-	glColor3fv(color);
-	//Wywolanie funkcji rysujacej piramide
-	RysujPiramide();
-	// Wys³anie poleceñ do wykonania i zamiana buforów
-	glutSwapBuffers();
+// Adds two vectors together
+void gltAddVectors(const GLTVector3 vFirst, const GLTVector3 vSecond, GLTVector3 vResult) {
+	vResult[0] = vFirst[0] + vSecond[0];
+	vResult[1] = vFirst[1] + vSecond[1];
+	vResult[2] = vFirst[2] + vSecond[2];
 }
 
-void onResize(int w, int h)
+// Subtract one vector from another
+void gltSubtractVectors(const GLTVector3 vFirst, const GLTVector3 vSecond, GLTVector3 vResult)
 {
+	vResult[0] = vFirst[0] - vSecond[0];
+	vResult[1] = vFirst[1] - vSecond[1];
+	vResult[2] = vFirst[2] - vSecond[2];
+}
+
+// Scales a vector by a scalar
+void gltScaleVector(GLTVector3 vVector, const GLfloat fScale)
+{
+	vVector[0] *= fScale; vVector[1] *= fScale; vVector[2] *= fScale;
+}
+
+// Gets the length of a vector squared
+GLfloat gltGetVectorLengthSqrd(const GLTVector3 vVector)
+{
+	return (vVector[0] * vVector[0]) + (vVector[1] * vVector[1]) + (vVector[2] * vVector[2]);
+}
+
+// Gets the length of a vector
+GLfloat gltGetVectorLength(const GLTVector3 vVector)
+{
+	return (GLfloat)sqrt(gltGetVectorLengthSqrd(vVector));
+}
+
+// Scales a vector by it's length - creates a unit vector
+void gltNormalizeVector(GLTVector3 vNormal)
+{
+	GLfloat fLength = 1.0f / gltGetVectorLength(vNormal);
+	gltScaleVector(vNormal, fLength);
+}
+
+// Copies a vector
+void gltCopyVector(const GLTVector3 vSource, GLTVector3 vDest)
+{
+	memcpy(vDest, vSource, sizeof(GLTVector3));
+}
+
+// Get the dot product between two vectors
+GLfloat gltVectorDotProduct(const GLTVector3 vU, const GLTVector3 vV)
+{
+	return vU[0] * vV[0] + vU[1] * vV[1] + vU[2] * vV[2];
+}
+
+// Calculate the cross product of two vectors
+void gltVectorCrossProduct(const GLTVector3 vU, const GLTVector3 vV, GLTVector3 vResult)
+{
+	vResult[0] = vU[1] * vV[2] - vV[1] * vU[2];
+	vResult[1] = -vU[0] * vV[2] + vV[0] * vU[2];
+	vResult[2] = vU[0] * vV[1] - vV[0] * vU[1];
+}
+
+
+
+// Given three points on a plane in counter clockwise order, calculate the unit normal
+void gltGetNormalVector(const GLTVector3 vP1, const GLTVector3 vP2, const GLTVector3 vP3, GLTVector3 vNormal)
+{
+	GLTVector3 vV1, vV2;
+
+	gltSubtractVectors(vP2, vP1, vV1);
+	gltSubtractVectors(vP3, vP1, vV2);
+
+	gltVectorCrossProduct(vV1, vV2, vNormal);
+	gltNormalizeVector(vNormal);
+}
+
+
+
+// Transform a point by a 4x4 matrix
+void gltTransformPoint(const GLTVector3 vSrcVector, const GLTMatrix mMatrix, GLTVector3 vOut)
+{
+	vOut[0] = mMatrix[0] * vSrcVector[0] + mMatrix[4] * vSrcVector[1] + mMatrix[8] * vSrcVector[2] + mMatrix[12];
+	vOut[1] = mMatrix[1] * vSrcVector[0] + mMatrix[5] * vSrcVector[1] + mMatrix[9] * vSrcVector[2] + mMatrix[13];
+	vOut[2] = mMatrix[2] * vSrcVector[0] + mMatrix[6] * vSrcVector[1] + mMatrix[10] * vSrcVector[2] + mMatrix[14];
+}
+
+// Rotates a vector using a 4x4 matrix. Translation column is ignored
+void gltRotateVector(const GLTVector3 vSrcVector, const GLTMatrix mMatrix, GLTVector3 vOut)
+{
+	vOut[0] = mMatrix[0] * vSrcVector[0] + mMatrix[4] * vSrcVector[1] + mMatrix[8] * vSrcVector[2];
+	vOut[1] = mMatrix[1] * vSrcVector[0] + mMatrix[5] * vSrcVector[1] + mMatrix[9] * vSrcVector[2];
+	vOut[2] = mMatrix[2] * vSrcVector[0] + mMatrix[6] * vSrcVector[1] + mMatrix[10] * vSrcVector[2];
+}
+
+
+// Gets the three coefficients of a plane equation given three points on the plane.
+void gltGetPlaneEquation(GLTVector3 vPoint1, GLTVector3 vPoint2, GLTVector3 vPoint3, GLTVector3 vPlane)
+{
+	// Get normal vector from three points. The normal vector is the first three coefficients
+	// to the plane equation...
+	gltGetNormalVector(vPoint1, vPoint2, vPoint3, vPlane);
+
+	// Final coefficient found by back substitution
+	vPlane[3] = -(vPlane[0] * vPoint3[0] + vPlane[1] * vPoint3[1] + vPlane[2] * vPoint3[2]);
+}
+
+// Determine the distance of a point from a plane, given the point and the
+// equation of the plane.
+GLfloat gltDistanceToPlane(GLTVector3 vPoint, GLTVector4 vPlane)
+{
+	return vPoint[0] * vPlane[0] + vPoint[1] * vPlane[1] + vPoint[2] * vPlane[2] + vPlane[3];
+}
+
+
+const int N = 6;
+const GLfloat GL_PI = 3.1415f;
+
+static GLfloat xRot = 0.0f;
+static GLfloat yRot = 0.0f;
+
+void ChangeSize(int w, int h)
+{
+	GLfloat fAspect;
+
 	if (h == 0)
 		h = 1;
-
-	float aspect = (float)w / (float)h;
-	// Ustalenie wielkoœci widoku zgodnego z rozmiarami okna
 	glViewport(0, 0, w, h);
-	// Ponowne ustawienie stosu macierzy rzutowania
+	fAspect = (GLfloat)w / (GLfloat)h;
 	glMatrixMode(GL_PROJECTION);
-	//s³u¿y do ponownego ustawienia (resetu) uk³adu wspó³rzêdnych, zanim wykonane zostan¹ jakiekolwiek manipulacje na macierzach.
 	glLoadIdentity();
-
-	if (w <= h)
-	{
-		//do przestrzeni ograniczaj¹cej zastosowaliœmy rzutowanie prostopadle. W bibliotece OpenGL funkcjê tworz¹ca takie rzutowanie jest funkcja glOrtho
-		glOrtho(-100.0f, 100.0, -100.0f / aspect, 100.0 / aspect, 100.0f, -100.0f);
-	}
-	else
-	{
-		//do przestrzeni ograniczaj¹cej zastosowaliœmy rzutowanie prostopadle. W bibliotece OpenGL funkcjê tworz¹ca takie rzutowanie jest funkcja glOrtho
-		glOrtho(-100.0 * aspect, 100.0 * aspect, -100.0f, 100.0, 100.0f, -100.0f);
-	}
-	// Ponowne ustawienie stosu macierzy rzutowania
-	//Wszystkie przysz³e przekszta³cenia bêd¹ dotyczy³y naszych modeli, czyli tego, co narysujemy
+	gluPerspective(35.0f, fAspect, 1.0, 40.0);
 	glMatrixMode(GL_MODELVIEW);
-	//s³u¿y do ponownego ustawienia (resetu) uk³adu wspó³rzêdnych, zanim wykonane zostan¹ jakiekolwiek manipulacje na macierzach.
 	glLoadIdentity();
 }
 
-void SetupRenderingContext()
+void SetupRC()
 {
-	//Funkcja ta ustala kolor stosowany do czyszczenia zawartoœci okna.
-	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-	// Model cieniowania kolorów – p³aski. biblioteka OpenGL bêdzie wype³nia³a wielok¹ty jednolitym kolorem
-	glShadeModel(GL_FLAT);
-	// Usuwanie ukrytych powierzchni
+	GLuint texture;
+	int x, y;
+	char pixels[256 * 256];
+	GLint iWidth = 256;
+	GLint iHeight = 256;
+	GLint iComponents = GL_RGB;
+	GLenum eFormat = {
+		GL_RGBA
+	};
+
+	GLfloat whiteLight[] = { 0.05f, 0.05f, 0.05f, 1.0f };
+	GLfloat sourceLight[] = { 0.25f, 0.25f, 0.25f, 1.0f };
+	GLfloat lightPos[] = { -10.f, 5.0f, 5.0f, 1.0f };
 	glEnable(GL_DEPTH_TEST);
-	// Mechanizm odwzorowywania tekstur
-	glEnable(GL_TEXTURE_2D);
-	// W³¹czenie œledzenia kolorów
-	glEnable(GL_COLOR_MATERIAL);
-	//W przypadku oœwietlenia, poni¿¹ instrukcja mo¿na w³¹czyæ odpowiedni stan
+	glEnable(GL_CULL_FACE);
+	glFrontFace(GL_CCW);
+
 	glEnable(GL_LIGHTING);
-	// Konfiguracja i W³¹czenie œwiat³a numer 0
-	glEnable(GL_LIGHT0);
-	glLightfv(GL_LIGHT0, GL_AMBIENT, sourceLight); //glLight — Ustawia parametry Ÿród³a œwiat³a
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, whiteLight);
+	glLightfv(GL_LIGHT0, GL_AMBIENT, sourceLight);
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, sourceLight);
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+	glEnable(GL_LIGHT0);
 
-	// W³aœciwoœci oœwietlenia otoczenia i rozproszenia bêdzie œledziæ wartoœci podawane funkcji glColor
+	glEnable(GL_COLOR_MATERIAL);
 	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
-
-	char pixels[256 * 256];
-	for (int x = 0; x < 256; x++)
-		for (int y = 0; y < 256; y++)
-			pixels[x * 256 + y] = rand() / 256;
-
-	//glGenTextures returns n texture names in textures
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
+
+
+	for (y = 0; y < 256; y++)
+	{
+		for (x = 0; x < 256; x++)
+			pixels[y * 256 + x] = rand() % 256;
+	}
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, 256, 256, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, pixels);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, 256, 256, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, pixels);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	glEnable(GL_TEXTURE_2D);
 }
 
-//Zamiana na obsluge strzalek z klawiatury poprzez zmiane na int
-void onKeyDown(int key, int x, int y)
+void SpecialKeys(int key, int x, int y)
 {
 	if (key == GLUT_KEY_UP)
-		rotX += 5.0f;
-
+		xRot -= 5.0f;
 	if (key == GLUT_KEY_DOWN)
-		rotX -= 5.0f;
-
+		xRot += 5.0f;
 	if (key == GLUT_KEY_LEFT)
-		rotY -= 5.0f;
-
+		yRot -= 5.0f;
 	if (key == GLUT_KEY_RIGHT)
-		rotY += 5.0f;
+		yRot += 5.0f;
+	xRot = (GLfloat)((const int)xRot % 360);
+	yRot = (GLfloat)((const int)yRot % 360);
 
-	//S³u¿¹ one do niezale¿nego od pêtli wyœwietlenia zawartoœci okna. Dzia³a na aktywne okno
-	// Odœwie¿enie zawartoœci okna
 	glutPostRedisplay();
 }
 
-int main(int argc, char** argv)
+void RenderScene(void)
 {
-	glutInit(&argc, argv);
-	//Wszystkie polecenia dzia³aj¹ na buforze niewidocznym.
-	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
-	glutInitWindowSize(800, 600);
-	glutCreateWindow("GK02 Cw03");
+	GLTVector3 bottomVertices[N];
+	for (int i = 0; i < N; ++i)
+	{
+		const GLfloat angle = (GLfloat)i / N * GL_PI * 2.0;
+		const GLfloat x = sin(angle);
+		const GLfloat y = cos(angle);
 
-	SetupRenderingContext();
+		bottomVertices[i][0] = x;
+		bottomVertices[i][1] = 0.0f;
+		bottomVertices[i][2] = y;
+	}
 
-	glutSpecialFunc(onKeyDown);
-	//rejestruj¹ca funkcja zwrotna wywo³ywana przez bibliotek przy ka¿dej zmianie rozmiarów okna.
-	glutReshapeFunc(onResize);
-	//zdefiniowana wczeœniej funkcja bêdzie funkcja zwrotna {callback function) wyœwietlaj¹ca obraz na ekranie.
-	glutDisplayFunc(Display);
-	/*
-	Ta funkcja uruchamia szkielet biblioteki GLUT. Po zdefiniowaniu funkcji zwrotnej obs³uguj¹cej rysowanie na ekranie i
-	innych funkcji uruchamiany jest mechanizm biblioteki. Powrót z funkcji
-	glutMainLoop nastêpuje dopiero przy zakoñczeniu pracy programu, dlatego wystarczy wywo³aæ j¹ tylko raz. Funkcja ta
-	przetwarza wszystkie komunikaty systemu operacyjnego, naciœniêcia klawiszy i inne, do czasu zakoñczenia pracy
-	programu.
-	*/
-	glutMainLoop();
+	GLTVector3 topVertice{ 0.0f, 1.0f, 0.0f };
+	GLTVector3 baseCenter{ 0.0f, 0.0f, 0.0f };
 
-	return 0;
-}
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-void RysujPiramide()
-{
-	CVector vertices[5] = {
-		{ 0.0f, 50.0f,  0.0f },
-		{ -20.0f, 0.0f,  20.0f },
-		{ -20.0f, 0.0f, -20.0f },
-		{ 20.0f, 0.0f, -20.0f },
-		{ 20.0f, 0.0f,  20.0f }
-	};
-	CVector normal;
+	glPushMatrix();
 
-	// Rozpoczêcie rysowania trójk¹tów
+	glTranslatef(0.0f, -0.25f, -4.0f);
+	glRotatef(xRot, 1.0f, 0.0f, 0.0f);
+	glRotatef(yRot, 0.0f, 1.0f, 0.0f);
+
+	glColor3f(1.0f, 1.0f, 1.0f);
 	glBegin(GL_TRIANGLES);
-	//Podstawa
+
 	glNormal3f(0.0f, -1.0f, 0.0f);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[2]);
-	glTexCoord2f(0.0f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[1]);
-	glTexCoord2f(1.0f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[4]);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[2]);
-	glTexCoord2f(1.0f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[4]);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[3]);
-	//Przednia sciana
-	GetNormal(vertices[1], vertices[0], vertices[4], normal);
-	glNormal3fv((GLfloat*)&normal);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[1]);
-	glTexCoord2f(0.5f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[0]);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[4]);
-	//Tylna sciana
-	GetNormal(vertices[3], vertices[0], vertices[2], normal);
-	glNormal3fv((GLfloat*)&normal);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[3]);
-	glTexCoord2f(0.5f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[0]);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[2]);
-	//Lewa sciana
-	GetNormal(vertices[2], vertices[0], vertices[1], normal);
-	glNormal3fv((GLfloat*)&normal);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[2]);
-	glTexCoord2f(0.5f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[0]);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[1]);
-	//Prawa sciana
-	GetNormal(vertices[4], vertices[0], vertices[3], normal);
-	glNormal3fv((GLfloat*)&normal);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[4]);
-	glTexCoord2f(0.5f, 1.0f);
-	glVertex3fv((GLfloat*)&vertices[0]);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex3fv((GLfloat*)&vertices[3]);
+	for (int i = 0; i < N; ++i)
+	{
+		glTexCoord2f(0.0f, 1.0f);
+		glVertex3fv(baseCenter);
+		glTexCoord2f(0.0f, 0.0f);
+		glVertex3fv(bottomVertices[(i + 1) % N]);
+		glTexCoord2f(1.0f, 1.0f);
+		glVertex3fv(bottomVertices[i]);
+	}
+
+	for (int i = 0; i < N; ++i)
+	{
+		GLTVector3 normal;
+		gltGetNormalVector(bottomVertices[i], bottomVertices[(i + 1) % N], topVertice, normal);
+		glNormal3fv(normal);
+
+		glTexCoord2f(1.0f, 1.0f);
+		glVertex3fv(bottomVertices[i]);
+		glTexCoord2f(0.0f, 0.0f);
+		glVertex3fv(bottomVertices[(i + 1) % N]);
+		glTexCoord2f(0.0f, 1.0f);
+		glVertex3fv(topVertice);
+	}
 
 	glEnd();
+	glPopMatrix();
+	glutSwapBuffers();
 }
 
-void GetNormal(CVector V1, CVector V2, CVector V3, CVector &N)
+
+int main(int argc, char *argv[])
 {
-	V1.x = V1.x - V2.x;
-	V1.y = V1.y - V2.y;
-	V1.z = V1.z - V2.z;
-
-	V2.x = V2.x - V3.x;
-	V2.y = V2.y - V3.y;
-	V2.z = V2.z - V3.z;
-
-	N.x = V1.y * V2.z - V1.z * V2.y;
-	N.y = V1.z * V2.x - V1.x * V2.z;
-	N.z = V1.x * V2.y - V1.y * V2.x;
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+	glutInitWindowSize(800, 600);
+	glutCreateWindow("Program");
+	glutReshapeFunc(ChangeSize);
+	glutSpecialFunc(SpecialKeys);
+	glutDisplayFunc(RenderScene);
+	SetupRC();
+	glutMainLoop();
+	return 0;
 }
